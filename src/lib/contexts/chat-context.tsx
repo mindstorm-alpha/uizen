@@ -5,22 +5,25 @@ import {
   useContext,
   ReactNode,
   useEffect,
+  useState,
+  ChangeEvent,
+  FormEvent,
 } from "react";
 import { useChat as useAIChat } from "@ai-sdk/react";
-import { Message } from "ai";
+import { UIMessage, DefaultChatTransport } from "ai";
 import { useFileSystem } from "./file-system-context";
 import { setHasAnonWork } from "@/lib/anon-work-tracker";
 
 interface ChatContextProps {
   projectId?: string;
-  initialMessages?: Message[];
+  initialMessages?: UIMessage[];
 }
 
 interface ChatContextType {
-  messages: Message[];
+  messages: UIMessage[];
   input: string;
-  handleInputChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void;
-  handleSubmit: (e: React.FormEvent<HTMLFormElement>) => void;
+  handleInputChange: (e: ChangeEvent<HTMLTextAreaElement>) => void;
+  handleSubmit: (e: FormEvent<HTMLFormElement>) => void;
   status: string;
 }
 
@@ -32,24 +35,29 @@ export function ChatProvider({
   initialMessages = [],
 }: ChatContextProps & { children: ReactNode }) {
   const { fileSystem, handleToolCall } = useFileSystem();
+  const [input, setInput] = useState("");
 
-  const {
-    messages,
-    input,
-    handleInputChange,
-    handleSubmit,
-    status,
-  } = useAIChat({
-    api: "/api/chat",
-    initialMessages,
-    body: {
-      files: fileSystem.serialize(),
-      projectId,
-    },
+  const { messages, sendMessage, status } = useAIChat({
+    transport: new DefaultChatTransport({ api: "/api/chat" }),
+    messages: initialMessages,
     onToolCall: ({ toolCall }) => {
-      handleToolCall(toolCall);
+      handleToolCall({ toolName: toolCall.toolName, args: (toolCall as any).input });
     },
   });
+
+  const handleInputChange = (e: ChangeEvent<HTMLTextAreaElement>) => {
+    setInput(e.target.value);
+  };
+
+  const handleSubmit = (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!input.trim()) return;
+    sendMessage(
+      { text: input },
+      { body: { files: fileSystem.serialize(), projectId } }
+    );
+    setInput("");
+  };
 
   // Track anonymous work
   useEffect(() => {
